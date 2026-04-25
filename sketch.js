@@ -2,12 +2,13 @@ let video;
 let started = false;
 
 const GRID = 18;
-const DENSITY = 0.38;
-const UPDATE_INTERVAL = 3; // frames between ASCII grid refreshes
+const DENSITY = 0.6;
+const UPDATE_INTERVAL = 3.5; // frames between ASCII grid refreshes
 
 let charGrid = [];
 let sizeGrid = [];
 let alphaGrid = [];
+let lumGrid  = [];
 let lastUpdate = -UPDATE_INTERVAL;
 
 function setup() {
@@ -20,7 +21,7 @@ function setup() {
   video.hide();
   video.loop();
   video.volume(0);
-  video.speed(1);
+  video.speed(.75);
 }
 
 function draw() {
@@ -59,11 +60,13 @@ function draw() {
     charGrid = [];
     sizeGrid = [];
     alphaGrid = [];
+    lumGrid  = [];
 
     for (let j = 0; j < rows; j++) {
       charGrid[j] = [];
       sizeGrid[j] = [];
       alphaGrid[j] = [];
+      lumGrid[j]  = [];
       for (let i = 0; i < cols; i++) {
         const cx = i * GRID + GRID * 0.5;
         const cy = j * GRID + GRID * 0.5;
@@ -91,6 +94,7 @@ function draw() {
         if (ch) {
           const edgeFactor = constrain(dist(cx, cy, width / 2, height / 2) / maxDist, 0, 1);
           const lum = (r + g + b) / 3;
+          lumGrid[j][i] = lum;
           const darkFactor = 1 - constrain(lum / 100, 0, 1);
           sizeGrid[j][i] = lerp(12, 5, max(edgeFactor, darkFactor));
 
@@ -116,7 +120,14 @@ function draw() {
       const a = alphaGrid[j] && alphaGrid[j][i];
       if (!a) continue;
       fill(255, 255, 255, a);
-      textSize(ch === '929' ? sizeGrid[j][i] * 0.75 : sizeGrid[j][i]);
+
+      // pulse: brighter pixels swing more, spatial phase creates a ripple
+      const lum = lumGrid[j] && lumGrid[j][i] || 0;
+      const pulseAmp = map(lum, 0, 255, 0, 8);
+      const phase = (i * 0.4 + j * 0.3);
+      const pulse = sin(millis() * 0.003 + phase) * pulseAmp;
+      const base = ch === '929' ? sizeGrid[j][i] * 0.75 : sizeGrid[j][i];
+      textSize(max(3, base + pulse));
       text(ch, i * GRID, j * GRID);
     }
   }
@@ -134,7 +145,7 @@ function pickChar(r, g, b) {
   // Pink / magenta: r+b dominant, g suppressed
   if (rn > 0.38 && gn < 0.27 && bn > 0.21 && r > 85) {
     if (random() >= DENSITY) return null;
-    return random(['929', '929', '@']);
+    return random(['9', '2', '9']);
   }
 
   // Cyan / blue: b dominant, r low
@@ -155,7 +166,7 @@ function pickChar(r, g, b) {
 
   // Mid-tone: lower probability so it stays sparse
   if (lum > 55) {
-    return random() < DENSITY * 0.55 ? '?' : null;
+    return random() < DENSITY * 0.55 ? '@' : null;
   }
 
   return null;
