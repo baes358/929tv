@@ -67,7 +67,12 @@ function draw() {
         const vx = floor(map(cx - drawX, 0, drawW, 0, vw));
         const vy = floor(map(cy - drawY, 0, drawH, 0, vh));
 
-        if (vx < 0 || vx >= vw || vy < 0 || vy >= vh) {
+        // skip cells outside or within padding of the video border
+        const PAD_Y = GRID * 5;
+        const PAD_X = 0;
+        if (vx < 0 || vx >= vw || vy < 0 || vy >= vh ||
+            cx < drawX + PAD_X || cx > drawX + drawW - PAD_X ||
+            cy < drawY + PAD_Y || cy > drawY + drawH - PAD_Y) {
           charGrid[j][i] = null;
           continue;
         }
