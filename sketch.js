@@ -7,6 +7,7 @@ const UPDATE_INTERVAL = 3; // frames between ASCII grid refreshes
 
 let charGrid = [];
 let sizeGrid = [];
+let alphaGrid = [];
 let lastUpdate = -UPDATE_INTERVAL;
 
 function setup() {
@@ -57,10 +58,12 @@ function draw() {
     video.loadPixels();
     charGrid = [];
     sizeGrid = [];
+    alphaGrid = [];
 
     for (let j = 0; j < rows; j++) {
       charGrid[j] = [];
       sizeGrid[j] = [];
+      alphaGrid[j] = [];
       for (let i = 0; i < cols; i++) {
         const cx = i * GRID + GRID * 0.5;
         const cy = j * GRID + GRID * 0.5;
@@ -68,7 +71,7 @@ function draw() {
         const vy = floor(map(cy - drawY, 0, drawH, 0, vh));
 
         // skip cells outside or within padding of the video border
-        const PAD_Y = GRID * 5;
+        const PAD_Y = GRID * 8;
         const PAD_X = 0;
         if (vx < 0 || vx >= vw || vy < 0 || vy >= vh ||
             cx < drawX + PAD_X || cx > drawX + drawW - PAD_X ||
@@ -90,6 +93,15 @@ function draw() {
           const lum = (r + g + b) / 3;
           const darkFactor = 1 - constrain(lum / 100, 0, 1);
           sizeGrid[j][i] = lerp(12, 5, max(edgeFactor, darkFactor));
+
+          // fade starts at 0 from the PAD boundary (not the raw video edge)
+          const FADE_Y = GRID * 9;
+          const FADE_X = GRID * 2;
+          const fromTop    = (cy - drawY - PAD_Y) / FADE_Y;
+          const fromLeft   = (cx - drawX - PAD_X) / FADE_X;
+          const fromRight  = (drawX + drawW - cx - PAD_X) / FADE_X;
+          const minEdgeFactor = min(fromTop, fromLeft, fromRight);
+          alphaGrid[j][i] = floor(210 * constrain(minEdgeFactor, 0, 1));
         }
       }
     }
@@ -97,12 +109,14 @@ function draw() {
   }
 
   // draw from cache every frame (no flicker between updates)
-  fill(255, 255, 255, 210);
   for (let j = 0; j < rows; j++) {
     for (let i = 0; i < cols; i++) {
       const ch = charGrid[j] && charGrid[j][i];
       if (!ch) continue;
-      textSize(sizeGrid[j][i]);
+      const a = alphaGrid[j] && alphaGrid[j][i];
+      if (!a) continue;
+      fill(255, 255, 255, a);
+      textSize(ch === '929' ? sizeGrid[j][i] * 0.75 : sizeGrid[j][i]);
       text(ch, i * GRID, j * GRID);
     }
   }
@@ -119,7 +133,8 @@ function pickChar(r, g, b) {
 
   // Pink / magenta: r+b dominant, g suppressed
   if (rn > 0.38 && gn < 0.27 && bn > 0.21 && r > 85) {
-    return random() < DENSITY ? '929' : null;
+    if (random() >= DENSITY) return null;
+    return random(['929', '929', '@']);
   }
 
   // Cyan / blue: b dominant, r low
@@ -140,7 +155,7 @@ function pickChar(r, g, b) {
 
   // Mid-tone: lower probability so it stays sparse
   if (lum > 55) {
-    return random() < DENSITY * 0.55 ? '@' : null;
+    return random() < DENSITY * 0.55 ? '?' : null;
   }
 
   return null;
