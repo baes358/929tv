@@ -1,7 +1,10 @@
 let video;
 let started = false;
 
-const GRID = 14;
+const GRID = 18;
+
+// sparse overlay: probability a cell renders a char when color matches
+const DENSITY = 0.38;
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
@@ -27,22 +30,38 @@ function draw() {
     return;
   }
 
-  video.loadPixels();
-  if (!video.pixels.length) return;
-
   const vw = video.width;
   const vh = video.height;
   if (!vw || !vh) return;
+
+  // contain: show full video centered, black bars if needed
+  const scale = min(width / vw, height / vh);
+  const drawW = vw * scale;
+  const drawH = vh * scale;
+  const drawX = (width - drawW) / 2;
+  const drawY = (height - drawH) / 2;
+
+  // video as background
+  image(video, drawX, drawY, drawW, drawH);
+
+  // sample video pixels for overlay placement
+  video.loadPixels();
+  if (!video.pixels.length) return;
 
   const cols = floor(width / GRID);
   const rows = floor(height / GRID);
 
   for (let j = 0; j < rows; j++) {
     for (let i = 0; i < cols; i++) {
-      const vx = floor(map(i, 0, cols, 0, vw));
-      const vy = floor(map(j, 0, rows, 0, vh));
-      const idx = (vy * vw + vx) * 4;
+      const cx = i * GRID + GRID * 0.5;
+      const cy = j * GRID + GRID * 0.5;
 
+      // map canvas cell center → video pixel
+      const vx = floor(map(cx - drawX, 0, drawW, 0, vw));
+      const vy = floor(map(cy - drawY, 0, drawH, 0, vh));
+      if (vx < 0 || vx >= vw || vy < 0 || vy >= vh) continue;
+
+      const idx = (vy * vw + vx) * 4;
       const r = video.pixels[idx];
       const g = video.pixels[idx + 1];
       const b = video.pixels[idx + 2];
@@ -50,38 +69,48 @@ function draw() {
       const ch = pickChar(r, g, b);
       if (!ch) continue;
 
-      fill(r, g, b);
-      textSize(GRID - 3);
-      // subtle jitter reinforces the glitch/static feel
-      text(ch, i * GRID + random(-1, 1), j * GRID + random(-0.5, 0.5));
+      // white overlay, slight jitter for glitch feel
+      fill(255, 255, 255, 210);
+      textSize(12);
+      text(ch, i * GRID + random(-1.5, 1.5), j * GRID + random(-1, 1));
     }
   }
 }
 
 function pickChar(r, g, b) {
   const lum = (r + g + b) / 3;
-  if (lum < 22) return null; // pure black — nothing
+  if (lum < 20) return null; // pure black — skip
 
   const tot = r + g + b || 1;
   const rn = r / tot;
   const gn = g / tot;
   const bn = b / tot;
 
-  // Pink / magenta: r + b dominant, g suppressed
-  if (rn > 0.38 && gn < 0.27 && bn > 0.21 && r > 85) return '929';
+  // Pink / magenta: r+b dominant, g suppressed
+  if (rn > 0.38 && gn < 0.27 && bn > 0.21 && r > 85) {
+    return random() < DENSITY ? '929' : null;
+  }
 
   // Cyan / blue: b dominant, r low
-  if (bn > 0.44 && rn < 0.23 && b > 65) return '+';
+  if (bn > 0.44 && rn < 0.23 && b > 65) {
+    return random() < DENSITY ? '+' : null;
+  }
 
   // Red / orange: r dominant
-  if (rn > 0.54 && gn < 0.26 && r > 85) return '&';
+  if (rn > 0.54 && gn < 0.26 && r > 85) {
+    return random() < DENSITY ? '&' : null;
+  }
 
-  // White / near-white: all channels even and bright
+  // White / bright highlights
   const spread = max(rn, gn, bn) - min(rn, gn, bn);
-  if (lum > 155 && spread < 0.16) return '#';
+  if (lum > 155 && spread < 0.16) {
+    return random() < DENSITY ? '#' : null;
+  }
 
-  // Mid-tone catch-all
-  if (lum > 48) return '@';
+  // Mid-tone: lower probability so it stays sparse
+  if (lum > 55) {
+    return random() < DENSITY * 0.55 ? '@' : null;
+  }
 
   return null;
 }
