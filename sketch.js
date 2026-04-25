@@ -2,9 +2,12 @@ let video;
 let started = false;
 
 const GRID = 18;
-
-// sparse overlay: probability a cell renders a char when color matches
 const DENSITY = 0.38;
+const UPDATE_INTERVAL = 3; // frames between ASCII grid refreshes
+
+let charGrid = [];
+let sizeGrid = [];
+let lastUpdate = -UPDATE_INTERVAL;
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
@@ -16,6 +19,7 @@ function setup() {
   video.hide();
   video.loop();
   video.volume(0);
+  video.speed(1);
 }
 
 function draw() {
@@ -44,46 +48,57 @@ function draw() {
   // video as background
   image(video, drawX, drawY, drawW, drawH);
 
-  // sample video pixels for overlay placement
-  video.loadPixels();
-  if (!video.pixels.length) return;
-
   const cols = floor(width / GRID);
   const rows = floor(height / GRID);
+  const maxDist = dist(0, 0, width / 2, height / 2);
 
+  // recompute grid every UPDATE_INTERVAL frames
+  if (frameCount - lastUpdate >= UPDATE_INTERVAL) {
+    video.loadPixels();
+    charGrid = [];
+    sizeGrid = [];
+
+    for (let j = 0; j < rows; j++) {
+      charGrid[j] = [];
+      sizeGrid[j] = [];
+      for (let i = 0; i < cols; i++) {
+        const cx = i * GRID + GRID * 0.5;
+        const cy = j * GRID + GRID * 0.5;
+        const vx = floor(map(cx - drawX, 0, drawW, 0, vw));
+        const vy = floor(map(cy - drawY, 0, drawH, 0, vh));
+
+        if (vx < 0 || vx >= vw || vy < 0 || vy >= vh) {
+          charGrid[j][i] = null;
+          continue;
+        }
+
+        const idx = (vy * vw + vx) * 4;
+        const r = video.pixels[idx];
+        const g = video.pixels[idx + 1];
+        const b = video.pixels[idx + 2];
+
+        const ch = pickChar(r, g, b);
+        charGrid[j][i] = ch;
+
+        if (ch) {
+          const edgeFactor = constrain(dist(cx, cy, width / 2, height / 2) / maxDist, 0, 1);
+          const lum = (r + g + b) / 3;
+          const darkFactor = 1 - constrain(lum / 100, 0, 1);
+          sizeGrid[j][i] = lerp(12, 5, max(edgeFactor, darkFactor));
+        }
+      }
+    }
+    lastUpdate = frameCount;
+  }
+
+  // draw from cache every frame (no flicker between updates)
+  fill(255, 255, 255, 210);
   for (let j = 0; j < rows; j++) {
     for (let i = 0; i < cols; i++) {
-      const cx = i * GRID + GRID * 0.5;
-      const cy = j * GRID + GRID * 0.5;
-
-      // map canvas cell center → video pixel
-      const vx = floor(map(cx - drawX, 0, drawW, 0, vw));
-      const vy = floor(map(cy - drawY, 0, drawH, 0, vh));
-      if (vx < 0 || vx >= vw || vy < 0 || vy >= vh) continue;
-
-      const idx = (vy * vw + vx) * 4;
-      const r = video.pixels[idx];
-      const g = video.pixels[idx + 1];
-      const b = video.pixels[idx + 2];
-
-      const ch = pickChar(r, g, b);
+      const ch = charGrid[j] && charGrid[j][i];
       if (!ch) continue;
-
-      // edge factor: 0 at center, 1 at corner
-      const maxDist = dist(0, 0, width / 2, height / 2);
-      const edgeFactor = constrain(dist(cx, cy, width / 2, height / 2) / maxDist, 0, 1);
-
-      // dark factor: 1 when near-black, 0 when bright
-      const lum = (r + g + b) / 3;
-      const darkFactor = 1 - constrain(lum / 100, 0, 1);
-
-      // whichever pulls smaller wins
-      const sz = lerp(12, 5, max(edgeFactor, darkFactor));
-
-      // white overlay, slight jitter for glitch feel
-      fill(255, 255, 255, 210);
-      textSize(sz);
-      text(ch, i * GRID + random(-1.5, 1.5), j * GRID + random(-1, 1));
+      textSize(sizeGrid[j][i]);
+      text(ch, i * GRID, j * GRID);
     }
   }
 }
