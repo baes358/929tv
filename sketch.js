@@ -69,9 +69,20 @@ function draw() {
       const ch = pickChar(r, g, b);
       if (!ch) continue;
 
+      // edge factor: 0 at center, 1 at corner
+      const maxDist = dist(0, 0, width / 2, height / 2);
+      const edgeFactor = constrain(dist(cx, cy, width / 2, height / 2) / maxDist, 0, 1);
+
+      // dark factor: 1 when near-black, 0 when bright
+      const lum = (r + g + b) / 3;
+      const darkFactor = 1 - constrain(lum / 100, 0, 1);
+
+      // whichever pulls smaller wins
+      const sz = lerp(12, 5, max(edgeFactor, darkFactor));
+
       // white overlay, slight jitter for glitch feel
       fill(255, 255, 255, 210);
-      textSize(12);
+      textSize(sz);
       text(ch, i * GRID + random(-1.5, 1.5), j * GRID + random(-1, 1));
     }
   }
