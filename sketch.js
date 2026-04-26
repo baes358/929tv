@@ -2,13 +2,15 @@ let video;
 let started = false;
 
 const GRID = 18;
-const DENSITY = 0.6;
+const DENSITY = .75;
 const UPDATE_INTERVAL = 3.5; // frames between ASCII grid refreshes
 
-let charGrid = [];
-let sizeGrid = [];
-let alphaGrid = [];
-let lumGrid  = [];
+let charGrid   = [];
+let sizeGrid   = [];
+let alphaGrid  = [];
+let lumGrid    = [];
+let motionGrid = [];
+let prevPixels = null;
 let lastUpdate = -UPDATE_INTERVAL;
 
 function setup() {
@@ -50,23 +52,27 @@ function draw() {
   // video as background
   image(video, drawX, drawY, drawW, drawH);
 
-  const cols = floor(width / GRID);
-  const rows = floor(height / GRID);
+  const cols  = floor(width / GRID);
+  const rows  = floor(height / GRID);
   const maxDist = dist(0, 0, width / 2, height / 2);
+  const PAD_Y = GRID * 8;
+  const PAD_X = 0;
 
   // recompute grid every UPDATE_INTERVAL frames
   if (frameCount - lastUpdate >= UPDATE_INTERVAL) {
     video.loadPixels();
-    charGrid = [];
-    sizeGrid = [];
-    alphaGrid = [];
-    lumGrid  = [];
+    charGrid   = [];
+    sizeGrid   = [];
+    alphaGrid  = [];
+    lumGrid    = [];
+    motionGrid = [];
 
     for (let j = 0; j < rows; j++) {
-      charGrid[j] = [];
-      sizeGrid[j] = [];
-      alphaGrid[j] = [];
-      lumGrid[j]  = [];
+      charGrid[j]   = [];
+      sizeGrid[j]   = [];
+      alphaGrid[j]  = [];
+      lumGrid[j]    = [];
+      motionGrid[j] = [];
       for (let i = 0; i < cols; i++) {
         const cx = i * GRID + GRID * 0.5;
         const cy = j * GRID + GRID * 0.5;
@@ -74,11 +80,10 @@ function draw() {
         const vy = floor(map(cy - drawY, 0, drawH, 0, vh));
 
         // skip cells outside or within padding of the video border
-        const PAD_Y = GRID * 8;
         const PAD_X = 0;
         if (vx < 0 || vx >= vw || vy < 0 || vy >= vh ||
-            cx < drawX + PAD_X || cx > drawX + drawW - PAD_X ||
-            cy < drawY + PAD_Y || cy > drawY + drawH - PAD_Y) {
+            cx < drawX + PAD_X  || cx > drawX + drawW - PAD_X ||
+            cy < drawY + PAD_Y  || cy > drawY + drawH - PAD_Y) {
           charGrid[j][i] = null;
           continue;
         }
@@ -95,6 +100,15 @@ function draw() {
           const edgeFactor = constrain(dist(cx, cy, width / 2, height / 2) / maxDist, 0, 1);
           const lum = (r + g + b) / 3;
           lumGrid[j][i] = lum;
+
+          // motion = per-cell frame diff against previous frame
+          let motion = 0;
+          if (prevPixels && idx + 2 < prevPixels.length) {
+            motion = (abs(r - prevPixels[idx]) +
+                      abs(g - prevPixels[idx + 1]) +
+                      abs(b - prevPixels[idx + 2])) / 3;
+          }
+          motionGrid[j][i] = motion;
           const darkFactor = 1 - constrain(lum / 100, 0, 1);
           sizeGrid[j][i] = lerp(12, 5, max(edgeFactor, darkFactor));
 
@@ -109,6 +123,7 @@ function draw() {
         }
       }
     }
+    prevPixels = video.pixels.slice();
     lastUpdate = frameCount;
   }
 
@@ -121,14 +136,26 @@ function draw() {
       if (!a) continue;
       fill(255, 255, 255, a);
 
-      // pulse: brighter pixels swing more, spatial phase creates a ripple
-      const lum = lumGrid[j] && lumGrid[j][i] || 0;
-      const pulseAmp = map(lum, 0, 255, 0, 8);
-      const phase = (i * 0.4 + j * 0.3);
-      const pulse = sin(millis() * 0.003 + phase) * pulseAmp;
+      // motion from video frame diff drives pulse and jitter
+      const motion = motionGrid[j] && motionGrid[j][i] || 0;
+      const t = millis() * 0.0006;
+
+      // size pulses with video motion — still noise-shaped but motion-scaled
+      const pulseAmp = map(motion, 0, 60, 0, 16, true);
+      const pulse = (noise(i * 0.18, j * 0.18, t) - 0.5) * 2 * pulseAmp;
       const base = ch === '929' ? sizeGrid[j][i] * 0.75 : sizeGrid[j][i];
-      textSize(max(3, base + pulse));
-      text(ch, i * GRID, j * GRID);
+
+      // near the top perimeter, force size very small
+      const cy = j * GRID + GRID * 0.5;
+      const TOP_ZONE = GRID * 14;
+      const topProx = 1 - constrain((cy - drawY - PAD_Y) / TOP_ZONE, 0, 1);
+      const sz = lerp(max(3, base + pulse), 3.5, topProx);
+      textSize(sz);
+
+      // position jitter scales with video motion
+      const jx = (noise(i * 0.25, j * 0.25, t * 1.3) - 0.5) * map(motion, 0, 60, 0, 10, true);
+      const jy = (noise(i * 0.25 + 99, j * 0.25 + 99, t * 1.3) - 0.5) * map(motion, 0, 60, 0, 7, true);
+      text(ch, i * GRID + jx, j * GRID + jy);
     }
   }
 }
