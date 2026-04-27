@@ -1,18 +1,17 @@
 let video;
 let started = false;
-let recorder, chunks = [];
 
 const GRID = 18;
-const DENSITY = .75;
+const DENSITY = .7;
 const UPDATE_INTERVAL = 3.5; // frames between ASCII grid refreshes
 
 let charGrid   = [];
 let sizeGrid   = [];
 let alphaGrid  = [];
 let lumGrid    = [];
-let motionGrid  = [];
-let prevSampled = {}; // only stores sampled grid pixels, not the full array
-let lastUpdate  = -UPDATE_INTERVAL;
+let motionGrid = [];
+let prevPixels = null;
+let lastUpdate = -UPDATE_INTERVAL;
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
@@ -25,7 +24,6 @@ function setup() {
   video.loop();
   video.volume(0);
   video.speed(.75);
-  frameRate(30);
 }
 
 function draw() {
@@ -103,14 +101,13 @@ function draw() {
           const lum = (r + g + b) / 3;
           lumGrid[j][i] = lum;
 
-          // motion = per-cell frame diff (only sampled positions stored)
+          // motion = per-cell frame diff against previous frame
           let motion = 0;
-          const key = i + '_' + j;
-          if (prevSampled[key]) {
-            const p = prevSampled[key];
-            motion = (abs(r - p[0]) + abs(g - p[1]) + abs(b - p[2])) / 3;
+          if (prevPixels && idx + 2 < prevPixels.length) {
+            motion = (abs(r - prevPixels[idx]) +
+                      abs(g - prevPixels[idx + 1]) +
+                      abs(b - prevPixels[idx + 2])) / 3;
           }
-          prevSampled[key] = [r, g, b];
           motionGrid[j][i] = motion;
           const darkFactor = 1 - constrain(lum / 100, 0, 1);
           sizeGrid[j][i] = lerp(12, 5, max(edgeFactor, darkFactor));
@@ -126,6 +123,7 @@ function draw() {
         }
       }
     }
+    prevPixels = video.pixels.slice();
     lastUpdate = frameCount;
   }
 
@@ -142,9 +140,9 @@ function draw() {
       const motion = motionGrid[j] && motionGrid[j][i] || 0;
       const t = millis() * 0.0006;
 
-      // size pulses with video motion
+      // size pulses with video motion — still noise-shaped but motion-scaled
       const pulseAmp = map(motion, 0, 60, 0, 16, true);
-      const pulse = sin(t + i * 0.4 + j * 0.31) * pulseAmp;
+      const pulse = (noise(i * 0.18, j * 0.18, t) - 0.5) * 2 * pulseAmp;
       const base = ch === '929' ? sizeGrid[j][i] * 0.75 : sizeGrid[j][i];
 
       // near the top perimeter, force size very small
@@ -155,8 +153,8 @@ function draw() {
       textSize(sz);
 
       // position jitter scales with video motion
-      const jx = sin(t * 1.3 + i * 0.5 + j * 0.2) * map(motion, 0, 60, 0, 10, true);
-      const jy = cos(t * 1.3 + i * 0.2 + j * 0.5) * map(motion, 0, 60, 0, 7, true);
+      const jx = (noise(i * 0.25, j * 0.25, t * 1.3) - 0.5) * map(motion, 0, 60, 0, 10, true);
+      const jy = (noise(i * 0.25 + 99, j * 0.25 + 99, t * 1.3) - 0.5) * map(motion, 0, 60, 0, 7, true);
       text(ch, i * GRID + jx, j * GRID + jy);
     }
   }
@@ -205,29 +203,6 @@ function mousePressed() {
   if (!started) {
     video.play();
     started = true;
-  }
-}
-
-function keyPressed() {
-  if (key === 'r') {
-    chunks = [];
-    const stream = document.querySelector('canvas').captureStream(30);
-    recorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp9' });
-    recorder.ondataavailable = e => chunks.push(e.data);
-    recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: 'video/webm' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = '929tv.webm';
-      a.click();
-      chunks = [];
-    };
-    recorder.start();
-    console.log('recording...');
-  }
-  if (key === 's' && recorder && recorder.state === 'recording') {
-    recorder.stop();
-    console.log('saved.');
   }
 }
 
